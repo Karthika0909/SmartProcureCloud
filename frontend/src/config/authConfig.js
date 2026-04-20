@@ -7,9 +7,7 @@
 //      as the current origin is registered as an SPA redirect URI in Azure AD)
 
 const envRedirectUri = import.meta.env.VITE_AAD_REDIRECT_URI;
-const defaultRedirectUri = import.meta.env.DEV
-  ? 'http://localhost:5173/'
-  : window.location.origin;
+const defaultRedirectUri = 'https://smartprocure.20.247.248.30.nip.io';
 
 export const msalConfig = {
   auth: {
