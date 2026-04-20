@@ -1,0 +1,64 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files and diff
+        run: |
+          git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
+          git diff origin/${{ github.base_ref }}...HEAD -- '*.js' '*.vue' '*.ts' > diff_content.txt
+          echo "Changed files:"
+          cat changed_files.txt
+
+      - name: Claude AI Code Review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN:          ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER:         ${{ github.event.pull_request.number }}
+          REPO:              ${{ github.repository }}
+        run: |
+          DIFF=$(head -c 8000 diff_content.txt)
+          FILES=$(cat changed_files.txt)
+
+          REVIEW=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d "$(jq -n \
+              --arg diff "$DIFF" \
+              --arg files "$FILES" \
+              '{
+                model: "claude-sonnet-4-20250514",
+                max_tokens: 1024,
+                messages: [{
+                  role: "user",
+                  content: ("You are a senior code reviewer for SmartProcure, a procurement app built with Vue.js and Node.js deployed on Azure AKS with Azure AD authentication.\n\nReview this pull request and provide feedback on:\n1. Security issues (especially JWT/Azure AD token handling)\n2. Code quality and Vue.js best practices\n3. Performance concerns\n4. Bugs or logic errors\n5. Kubernetes/Docker configuration issues\n\nChanged files:\n" + $files + "\n\nCode diff:\n" + $diff + "\n\nProvide concise, actionable feedback in markdown format.")
+                }]
+              }')" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['content'][0]['text'])")
+
+          COMMENT="## 🤖 Claude AI Code Review
+
+          $REVIEW
+
+          ---
+          *Automated review by Claude AI — SmartProcure CI Pipeline*"
+
+          curl -s -X POST \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments" \
+            -d "$(jq -n --arg body "$COMMENT" '{body: $body}')"

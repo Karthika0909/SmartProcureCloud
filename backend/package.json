@@ -1,0 +1,18 @@
+{
+  "name": "smartprocure-backend",
+  "version": "1.0.0",
+  "description": "SmartProcure Node.js backend with Azure AD JWT validation",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "jwks-rsa": "^4.0.1",
+    "morgan": "^1.10.1"
+  }
+}
