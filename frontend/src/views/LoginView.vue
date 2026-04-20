@@ -95,8 +95,6 @@ const error = ref(null);
 const msalReady = ref(false);
 const msalInitErrorMsg = ref('');
 
-const POPUP_TIMEOUT_MS = 20000;
-
 const completeSignin = async (result) => {
   const token = result.idToken;
   const email = result.account.username;
@@ -148,10 +146,9 @@ onMounted(async () => {
     if (redirectErr) {
       stripAuthHash();
       if (redirectErr.errorCode === 'no_token_request_cache_error') {
-        error.value =
-          'Sign-in state was lost during the redirect. ' +
-          'Please click "Sign in" again - if this keeps happening, ' +
-          'clear site data for this URL and retry.';
+        // msal.js already purges stale MSAL cache + URL hash for this case.
+        // Keep UI quiet and allow immediate retry with a clean slate.
+        error.value = null;
       } else {
         error.value =
           'Login failed after redirect. ' +
@@ -177,8 +174,7 @@ onMounted(async () => {
 });
 
 const handleLogin = async () => {
-  // Guard against double-clicks - a second loginPopup before the first
-  // finishes is the classic trigger for `interaction_in_progress`.
+  // Guard against double-clicks while the interactive flow is launching.
   if (loading.value) return;
 
   // Extra guard: if MSAL never came up (e.g. insecure context, see the
@@ -192,65 +188,20 @@ const handleLogin = async () => {
   loading.value = true;
   error.value = null;
   try {
-    // Safe to call repeatedly; it's a cached, resolved promise after
-    // the first call in main.js.
+    // Safe to call repeatedly; it's cached after first bootstrap.
     await initMsal();
-
-    const popupResult = await Promise.race([
-      msalInstance.loginPopup(loginRequest),
-      new Promise((_, reject) => {
-        setTimeout(() => reject({ errorCode: 'popup_local_timeout' }), POPUP_TIMEOUT_MS);
-      })
-    ]);
-
-    await completeSignin(popupResult);
+    // Use redirect flow only (no popup). Popup+redirect fallback can race
+    // and lose request state (`no_token_request_cache_error`), then finish
+    // auth in the popup window on retry.
+    await msalInstance.loginRedirect(loginRequest);
+    return;
   } catch (e) {
     console.error(e);
 
-    // Recover from a stuck MSAL interaction flag. Calling
-    // handleRedirectPromise() clears the sessionStorage flag so the
-    // next click can proceed.
     if (e?.errorCode === 'interaction_in_progress') {
-      try {
-        await msalInstance.handleRedirectPromise();
-      } catch {
-        // noop
-      }
-      error.value = 'Previous sign-in was interrupted. Please try again.';
+      error.value = 'A sign-in is already in progress. Please wait a moment and try again.';
     } else if (e?.errorCode === 'user_cancelled') {
       error.value = 'Sign-in cancelled.';
-    } else if (
-      e?.errorCode === 'timed_out' ||
-      e?.errorCode === 'monitor_window_timeout' ||
-      e?.errorCode === 'popup_local_timeout'
-    ) {
-      // Popup opened but never posted back (redirect URI not registered
-      // as SPA in Azure AD, popup blocker, cross-origin messaging issue).
-      // MSAL still thinks the popup interaction is in-flight, so we must
-      // clear that flag before we can start a redirect - otherwise MSAL
-      // throws `interaction_in_progress`.
-      try {
-        await msalInstance.handleRedirectPromise();
-      } catch {
-        // noop
-      }
-      // handleRedirectPromise() doesn't always clear the flag if there
-      // was no hash to consume. Wipe the status key manually as a
-      // belt-and-braces - this is the key MSAL writes during interaction.
-      try {
-        window.sessionStorage.removeItem('msal.interaction.status');
-      } catch {
-        // noop
-      }
-      try {
-        window.localStorage.removeItem('msal.interaction.status');
-      } catch {
-        // noop
-      }
-      await msalInstance.loginRedirect(loginRequest);
-      return;
-    } else if (e?.errorCode === 'popup_window_error') {
-      error.value = 'Popup was blocked. Allow popups for this site and try again.';
     } else {
       error.value = 'Login failed. ' + (e?.errorMessage || e?.message || e?.errorCode || '');
     }
