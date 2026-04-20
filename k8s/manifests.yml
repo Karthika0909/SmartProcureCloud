@@ -25,8 +25,9 @@ stringData:
   NODE_ENV:        "production"
   PORT:            "4000"
   # Comma-separated origins allowed to call /api.
-  # Replace with the frontend LoadBalancer DNS / custom domain once assigned.
-  CORS_ORIGINS:    "http://localhost:5173"
+  # Replace <FRONTEND_IP> below with the actual EXTERNAL-IP of frontend-service.
+  # Keep localhost so local dev still works against a remote/local backend.
+  CORS_ORIGINS:    "http://localhost:5173,http://20.195.56.34"
 
 ---
 # ============================================================
