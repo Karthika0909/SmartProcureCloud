@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SmartProcure — Architecture Diagram</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f7fafc;
+      color: #1a202c;
+    }
+    header {
+      padding: 24px 32px 16px;
+      border-bottom: 1px solid #e2e8f0;
+      background: white;
+    }
+    header h1 {
+      margin: 0 0 4px;
+      font-size: 22px;
+      color: #1a365d;
+    }
+    header p {
+      margin: 0;
+      color: #718096;
+      font-size: 14px;
+    }
+    .diagram-wrap {
+      padding: 32px;
+      overflow-x: auto;
+    }
+    .mermaid {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      min-width: 1200px;
+    }
+    .legend {
+      padding: 0 32px 32px;
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-size: 13px;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      background: white;
+      border-radius: 20px;
+      border: 1px solid #e2e8f0;
+    }
+    .swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+    .swatch-azure    { background: #0078d4; }
+    .swatch-security { background: #b91c1c; }
+    .swatch-identity { background: #7c3aed; }
+    .swatch-users    { background: #059669; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SmartProcure — AKS Deployment Architecture</h1>
+    <p>DevSecOps pipeline, AKS Dev + Prod, Microsoft Entra ID for identity and Azure RBAC</p>
+  </header>
+
+  <div class="legend">
+    <span class="legend-item"><span class="swatch swatch-azure"></span>Azure resources</span>
+    <span class="legend-item"><span class="swatch swatch-security"></span>Security gates</span>
+    <span class="legend-item"><span class="swatch swatch-identity"></span>Identity &amp; access</span>
+    <span class="legend-item"><span class="swatch swatch-users"></span>Users / developers</span>
+  </div>
+
+  <div class="diagram-wrap">
+    <pre class="mermaid">
+flowchart LR
+    Dev[Developer]
+
+    subgraph Repo["Source Control"]
+        direction TB
+        Changes["Code Changes"]
+        FB["Feature Branches"]
+        PR["Pull Requests"]
+        Main["main branch"]
+        Changes --> FB --> PR --> Main
+    end
+
+    subgraph CICD["GitHub Actions Pipeline"]
+        direction TB
+        Trigger["Trigger: push to main"]
+
+        subgraph SecGates["Security Gates (DevSecOps)"]
+            direction LR
+            SCA["SCA<br/>Software Composition Analysis"]
+            SBOM["SBOM<br/>Software Bill of Materials"]
+            SAST["SAST<br/>Static App Security Testing"]
+            DAST["DAST<br/>Dynamic App Security Testing"]
+            OSS["OSS License Scan"]
+        end
+
+        Build["Build &amp; Push Images<br/>(buildx cache, SHA-tagged)"]
+        Deploy["Azure Deploy<br/>kubectl apply + set image"]
+
+        Trigger --> SecGates
+        SecGates --> Build
+        Build --> Deploy
+    end
+
+    subgraph Azure["Azure Cloud"]
+        direction TB
+        ACR[("ACR<br/>smartprocureacr")]
+
+        subgraph AKSDev["AKS - Dev"]
+            direction TB
+            DevFE["Frontend pods"]
+            DevBE["Backend pods"]
+            DevFE -.->|/api/| DevBE
+        end
+
+        subgraph AKSProd["AKS - Prod (smartprocure-aks)"]
+            direction TB
+            ProdFE["Frontend x2<br/>nginx + Vue SPA"]
+            ProdBE["Backend x2<br/>Node + Express"]
+            ProdFE -.->|/api/| ProdBE
+        end
+
+        LB["Public LoadBalancer<br/>20.195.56.34"]
+        ProdFE --> LB
+    end
+
+    subgraph Identity["Microsoft Entra ID"]
+        direction TB
+        AppReg["App Registration<br/>SPA + PKCE"]
+        IAM["IAM / Identity"]
+        RBAC["Azure RBAC<br/>for Kubernetes"]
+        Roles["Entitlements<br/>Admin / QS / Accounts / Readonly"]
+        AppReg --> IAM
+        AppReg --> Roles
+        IAM --> RBAC
+    end
+
+    Users(["End Users"])
+
+    Dev --> Changes
+    Main --> Trigger
+    Build --> ACR
+    ACR --> AKSDev
+    ACR --> AKSProd
+    LB --> Users
+    Users -.->|Sign in| AppReg
+    ProdBE -.->|Validate JWT| AppReg
+    RBAC -.->|Authorize| AKSProd
+
+    classDef azure fill:#0078d4,stroke:#004578,color:#fff
+    classDef security fill:#b91c1c,stroke:#7f1d1d,color:#fff
+    classDef identity fill:#7c3aed,stroke:#4c1d95,color:#fff
+    classDef users fill:#059669,stroke:#064e3b,color:#fff
+
+    class ACR,AKSDev,AKSProd,LB,DevFE,DevBE,ProdFE,ProdBE azure
+    class SCA,SBOM,SAST,DAST,OSS security
+    class AppReg,IAM,RBAC,Roles identity
+    class Users,Dev users
+    </pre>
+  </div>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      flowchart: {
+        curve: 'basis',
+        nodeSpacing: 50,
+        rankSpacing: 70,
+        htmlLabels: true,
+      },
+      securityLevel: 'loose',
+    });
+  </script>
+</body>
+</html>

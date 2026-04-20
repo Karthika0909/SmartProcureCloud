@@ -1,0 +1,87 @@
+flowchart LR
+    Dev[Developer]
+
+    subgraph Repo["Source Control"]
+        direction TB
+        Changes["Code Changes"]
+        FB["Feature Branches"]
+        PR["Pull Requests"]
+        Main["main branch"]
+        Changes --> FB --> PR --> Main
+    end
+
+    subgraph CICD["GitHub Actions Pipeline"]
+        direction TB
+        Trigger["Trigger: push to main"]
+
+        subgraph SecGates["Security Gates (DevSecOps)"]
+            direction LR
+            SCA["SCA<br/>Software Composition Analysis"]
+            SBOM["SBOM<br/>Software Bill of Materials"]
+            SAST["SAST<br/>Static App Security Testing"]
+            DAST["DAST<br/>Dynamic App Security Testing"]
+            OSS["OSS License Scan"]
+        end
+
+        Build["Build &amp; Push Images<br/>(buildx cache, SHA-tagged)"]
+        Deploy["Azure Deploy<br/>kubectl apply + set image"]
+
+        Trigger --> SecGates
+        SecGates --> Build
+        Build --> Deploy
+    end
+
+    subgraph Azure["Azure Cloud"]
+        direction TB
+        ACR[("ACR<br/>smartprocureacr")]
+
+        subgraph AKSDev["AKS - Dev"]
+            direction TB
+            DevFE["Frontend pods"]
+            DevBE["Backend pods"]
+            DevFE -.->|/api/| DevBE
+        end
+
+        subgraph AKSProd["AKS - Prod (smartprocure-aks)"]
+            direction TB
+            ProdFE["Frontend x2<br/>nginx + Vue SPA"]
+            ProdBE["Backend x2<br/>Node + Express"]
+            ProdFE -.->|/api/| ProdBE
+        end
+
+        LB["Public LoadBalancer<br/>20.195.56.34"]
+        ProdFE --> LB
+    end
+
+    subgraph Identity["Microsoft Entra ID"]
+        direction TB
+        AppReg["App Registration<br/>SPA + PKCE"]
+        IAM["IAM / Identity"]
+        RBAC["Azure RBAC<br/>for Kubernetes"]
+        Roles["Entitlements<br/>Admin / QS / Accounts / Readonly"]
+        AppReg --> IAM
+        AppReg --> Roles
+        IAM --> RBAC
+    end
+
+    Users(["End Users"])
+
+    Dev --> Changes
+    Main --> Trigger
+    Build --> ACR
+    ACR --> AKSDev
+    ACR --> AKSProd
+    LB --> Users
+    Users -.->|Sign in| AppReg
+    ProdBE -.->|Validate JWT| AppReg
+    RBAC -.->|Authorize| AKSProd
+
+    classDef azure fill:#0078d4,stroke:#004578,color:#fff
+    classDef security fill:#b91c1c,stroke:#7f1d1d,color:#fff
+    classDef identity fill:#7c3aed,stroke:#4c1d95,color:#fff
+    classDef users fill:#059669,stroke:#064e3b,color:#fff
+
+    class ACR,AKSDev,AKSProd,LB,DevFE,DevBE,ProdFE,ProdBE azure
+    class SCA,SBOM,SAST,DAST,OSS security
+    class AppReg,IAM,RBAC,Roles identity
+    class Users,Dev users

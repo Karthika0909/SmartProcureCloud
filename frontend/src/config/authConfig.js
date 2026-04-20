@@ -25,15 +25,18 @@ export const msalConfig = {
     // into a context that can't see the cached request, producing
     // `no_token_request_cache_error` from handleRedirectPromise().
     cacheLocation: 'localStorage',
-    // Cookie fallback for browsers that lose storage across the redirect
-    // (older Safari, strict privacy modes). Required on IE/Edge legacy.
-    storeAuthStateInCookie: true,
+    // `storeAuthStateInCookie` is only needed for IE11 / legacy Edge.
+    // On modern Chromium/Firefox it can confuse MSAL's cache lookup
+    // when cookies and localStorage disagree — leave it off.
+    storeAuthStateInCookie: false,
   },
   system: {
-    // Quieter in production; flip to Verbose when debugging MSAL.
+    // Verbose MSAL logs to the browser console. Quiet this down to
+    // `Warning` once you're past the cache-error debugging phase.
     loggerOptions: {
-      loggerCallback: () => {},
+      loggerCallback: (level, message) => console.log(`[msal] ${message}`),
       piiLoggingEnabled: false,
+      logLevel: 3, // 0=Error, 1=Warning, 2=Info, 3=Verbose
     },
   },
 };
