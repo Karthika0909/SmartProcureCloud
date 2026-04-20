@@ -69,6 +69,18 @@ jobs:
           resource-group: ${{ env.AKS_RG }}
           cluster-name:   ${{ env.AKS_CLUSTER }}
 
+      # AAD-integrated AKS hands back a kubeconfig that shells out to the
+      # `kubelogin` credential plugin. It's not on ubuntu-latest by default,
+      # so install it and convert the kubeconfig to reuse the az-cli login
+      # we already performed (no second device-code / browser flow).
+      - name: Install kubelogin
+        uses: azure/use-kubelogin@v1
+        with:
+          kubelogin-version: 'latest'
+
+      - name: Convert kubeconfig to azurecli auth
+        run: kubelogin convert-kubeconfig -l azurecli
+
       - name: Apply manifests
         run: kubectl apply -f k8s/manifests.yml
 
